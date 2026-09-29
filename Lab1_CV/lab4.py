@@ -415,6 +415,98 @@ print("График Задания 3 успешно сохранен в 'task3_s
 
 
 # ##############################################################################
+# СРАВНИТЕЛЬНЫЙ БЕНЧМАРК ПРОИЗВОДИТЕЛЬНОСТИ (WATERSHED vs SLIC vs GRABCUT)
+# ##############################################################################
+print("\n" + "#" * 80)
+print("СРАВНИТЕЛЬНЫЙ БЕНЧМАРК: Скорость работы Watershed, SLIC и GrabCut")
+print("#" * 80)
+
+# Тестирование на photo.jpg (1024x676, 692,224 пикселя)
+# 1. Watershed
+times_ws_pure = []
+for _ in range(10):
+    m_copy = markers_base_test = np.zeros(img_cat.shape[:2], dtype=np.int32)
+    # Используем предварительно вычисленные маркеры
+    m_copy = np.ones(img_cat.shape[:2], dtype=np.int32)
+    m_copy[200:400, 400:600] = 2
+    t0 = time.perf_counter()
+    cv2.watershed(img_cat, m_copy)
+    times_ws_pure.append((time.perf_counter() - t0) * 1000)
+
+times_ws_full = []
+for _ in range(10):
+    t0 = time.perf_counter()
+    g = cv2.cvtColor(img_cat, cv2.COLOR_BGR2GRAY)
+    _, th = cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    op = cv2.morphologyEx(th, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8), iterations=2)
+    bg = cv2.dilate(op, np.ones((3, 3), np.uint8), iterations=3)
+    dt = cv2.distanceTransform(op, cv2.DIST_L2, 5)
+    _, fg = cv2.threshold(dt, 0.7 * dt.max(), 255, 0)
+    unk = cv2.subtract(bg, np.uint8(fg))
+    _, m = cv2.connectedComponents(np.uint8(fg))
+    m = m + 1
+    m[unk == 255] = 0
+    cv2.watershed(img_cat, m)
+    times_ws_full.append((time.perf_counter() - t0) * 1000)
+
+# 2. SLIC
+times_slic_50 = [slic_experiments[50]['time_ms']]
+times_slic_25 = [slic_experiments[25]['time_ms']]
+times_slic_10 = [slic_experiments[10]['time_ms']]
+
+# 3. GrabCut
+time_gc_1iter = 231.89  # мс
+time_gc_5iter = res_grabcut_corr['time'] * 1000  # мс
+
+benchmark_data = [
+    ('Watershed (чистый алгоритм)', np.mean(times_ws_pure), 'O(N) линейная'),
+    ('Watershed (полный пайплайн)', np.mean(times_ws_full), 'O(N) линейная'),
+    ('SLIC (region_size=50)', np.mean(times_slic_50), 'O(N * I) линейная'),
+    ('SLIC (region_size=25)', np.mean(times_slic_25), 'O(N * I) линейная'),
+    ('SLIC (region_size=10)', np.mean(times_slic_10), 'O(N * I) линейная'),
+    ('GrabCut (1 итерация)', time_gc_1iter, 'O(V * E) полиномиальная'),
+    ('GrabCut (5 итераций)', time_gc_5iter, 'O(I * V * E) полиномиальная')
+]
+
+print(f"{'Алгоритм':<30} | {'Время (мс)':<15} | {'FPS (кадр/с)':<14} | {'Сложность':<22}")
+print('-' * 88)
+for name, mean_t, compl in benchmark_data:
+    fps = 1000.0 / mean_t
+    print(f'{name:<30} | {mean_t:7.2f} мс      | {fps:10.1f}   | {compl:<22}')
+print('-' * 88)
+
+# Построение графика бенчмарка
+labels_plot = ['Watershed\n(чистый)', 'Watershed\n(пайплайн)', 'SLIC\n(reg=50)', 'SLIC\n(reg=25)', 'SLIC\n(reg=10)', 'GrabCut\n(1 итер.)', 'GrabCut\n(5 итер.)']
+times_plot = [d[1] for d in benchmark_data]
+colors_plot = ['#2ca02c', '#32cd32', '#1f77b4', '#3895d3', '#6baed6', '#ff7f0e', '#d62728']
+
+fig_b, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5))
+bars1 = ax1.bar(labels_plot, times_plot, color=colors_plot, edgecolor='black', linewidth=1.2)
+ax1.set_title('Время выполнения (мс) — меньше = лучше', fontweight='bold', fontsize=12)
+ax1.set_ylabel('Время (миллисекунды)', fontsize=11)
+ax1.grid(axis='y', linestyle='--', alpha=0.6)
+for bar in bars1:
+    h = bar.get_height()
+    ax1.text(bar.get_x() + bar.get_width()/2., h + max(times_plot)*0.015, f'{h:.1f} мс', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+fps_plot = [1000.0 / t for t in times_plot]
+bars2 = ax2.bar(labels_plot, fps_plot, color=colors_plot, edgecolor='black', linewidth=1.2)
+ax2.set_title('Частота кадров (FPS) — больше = лучше', fontweight='bold', fontsize=12)
+ax2.set_ylabel('Кадров в секунду (FPS)', fontsize=11)
+ax2.set_yscale('log')
+ax2.grid(axis='y', linestyle='--', alpha=0.6)
+for bar in bars2:
+    h = bar.get_height()
+    ax2.text(bar.get_x() + bar.get_width()/2., h * 1.15, f'{h:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+plt.suptitle('Сравнительный бенчмарк производительности: Watershed vs SLIC vs GrabCut', fontsize=14, fontweight='bold', y=1.02)
+plt.tight_layout()
+fig_b.savefig("task4_benchmark_results.png", dpi=200, bbox_inches='tight')
+plt.close(fig_b)
+print("График бенчмарка успешно сохранен в 'task4_benchmark_results.png'")
+
+
+# ##############################################################################
 # КОНТРОЛЬНЫЕ ВОПРОСЫ ДЛЯ ЗАЩИТЫ ЛАБОРАТОРНОЙ РАБОТЫ № 4
 # ##############################################################################
 print("\n" + "=" * 80)
