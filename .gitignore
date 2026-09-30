@@ -1,0 +1,6 @@
+data/
+Lab1_CV/data/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
